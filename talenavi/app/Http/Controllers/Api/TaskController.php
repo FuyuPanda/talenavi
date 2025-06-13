@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Illuminate\Support\Facades\DB;
 
 use Illuminate\Http\Request;
 use App\Models\Task;
@@ -113,7 +114,73 @@ class TaskController extends Controller
 
     public function chart(Request $request)
     {
-        
+        if($request->has('type'))
+        {
+            $type = $request->type;
+            $query = Task::query();
+
+            switch($type)
+            {
+                case "status":
+                    $summary = $query -> selectRaw("status, count(*) as total ")->groupBy("status") ->pluck("total","status");
+
+                    return response()->json([
+                    'status_summary' => [
+                    "pending" => $summary->get("pending",0),
+                    "open" => $summary->get("open",0),
+                    "in_progress" => $summary->get("in_progress",0),
+                    "completed" => $summary->get("completed",0),
+                    ],
+                    ],200);
+                    break;
+                case "priority":
+                    $summary = $query -> selectRaw("priority, count(*) as total ")->groupBy("priority") ->pluck("total","priority");
+                    
+                    return response()->json([
+                    'priority_summary' => [
+                    "low" => $summary->get("low",0),
+                    "medium" => $summary->get("medium",0),
+                    "high" => $summary->get("high",0)
+                    ],
+                    ],200);
+
+                    break;
+
+                case "assignee":
+                    $assignee = $query->selectRaw("distinct assignee") -> get();
+                    $summary = [];
+                    if (count($assignee)>0)
+                    {
+                        foreach($assignee as $i => $assigne)
+                        {
+                            $query2 = DB::table("tasks");
+                            $count_todo = count($query2->where("assignee",$assigne->assignee)->get());
+                            $count_pending=count($query2->where("assignee",$assigne->assignee)->where("status","pending")->get());
+                            //dump($query2->where("assignee",$assigne->assignee)->where("status","pending")->toSql());
+                            
+                            $sum_of_time_tracked = DB::table('tasks')
+                            ->selectRaw('assignee, SUM(timeTracked) as total')
+                            ->where('assignee', $assigne->assignee)
+                            ->where('status', 'completed')
+                            ->groupBy('assignee')
+                            ->get();
+                            
+                            $summary[$assigne->assignee]["total_todos"]=$count_todo;
+                            $summary[$assigne->assignee]["total_pending_todos"]=$count_pending;
+                            $sum = $sum_of_time_tracked->first()->total??0;
+                            $summary[$assigne->assignee]["total_timetracked_completed_todos"]=(float)$sum;
+                            
+
+                            
+                        }
+
+                        return response()->json([
+                        'assignee_summary' => $summary
+                        ],200);
+                    }
+                    break;
+            }
+        }
     }
 
 
